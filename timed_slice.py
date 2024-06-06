@@ -1,9 +1,23 @@
 import argparse
 import os
+import re
+from typing import List, Sequence
 
 import cv2
 import numpy as np
 import tqdm
+
+
+def parse_sequence_ordering(images: Sequence, pattern: str) -> Sequence[str]:
+    result: List[str] = []
+    pattern_vals = [int(i.strip()) for i in pattern.split(",")]
+    for seq in pattern_vals:
+        step_size = len(images) // (abs(seq) - 1)
+        if seq < 0:
+            step_size = -step_size
+        result.extend(images[::step_size])
+    return result
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -38,10 +52,19 @@ if __name__ == "__main__":
         default=-1,
         help="Number of sliced used for the final image.",
     )
+    parser.add_argument(
+        "--slice_pattern",
+        type=str,
+        default="",
+        help="RegEx: -?%d+(,-?%d+)*, a sequence of slice patterns that allows non-linear slice ordering.",
+    )
     args = parser.parse_args()
     args.images.sort()
     args.images = [i for i in args.images if os.path.isfile(i)]
-    assert (args.interval_size < 0) ^ (args.slice_count < 0)
+    assert (
+        (args.interval_size > 0) ^ (args.slice_count > 0) ^ (args.slice_pattern != "")
+    ), f"{args.interval_size=}, {args.slice_count=}, {args.slice_pattern=}"
+
     if args.interval_size > 0:
         args.images = args.images[:: args.interval_size]
     elif args.slice_count > 0:
@@ -50,6 +73,10 @@ if __name__ == "__main__":
         if len(images) < args.slice_count:
             images.append(args.images[-1])
         args.images = images
+    elif args.slice_pattern != "":
+        if re.match(r"-?\d+(,-?\d+)*", args.slice_pattern) is None:
+            raise ValueError(f"Invalid pattern: {args.slice_pattern}")
+        args.images = parse_sequence_ordering(args.images, args.slice_pattern)
 
     is_horizontal: bool = args.horizontal
     use_reversed: bool = args.reversed
